@@ -1,0 +1,17 @@
+# This tool's own output. It contains your SteamID64, profile URL, country and
+# complete library with playtimes. If you clone this repo and run the script
+# here, these rules are what stand between that and an accidental `git add -A`.
+steam_library.csv
+steam_library_report.md
+steam_library_raw.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Windows
+Thumbs.db
+Desktop.ini
+desktop.ini
