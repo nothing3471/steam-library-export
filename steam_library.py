@@ -25,8 +25,10 @@ one `git add -A` away from being published.
 
 import argparse
 import csv
+import getpass
 import json
 import os
+import statistics
 import sys
 import time
 import urllib.error
@@ -41,12 +43,20 @@ API = "https://api.steampowered.com"
 # ---------------------------------------------------------------- transport
 
 def get_key():
+    """Return the API key from $STEAM_API_KEY, or ask for it.
+
+    The prompt does not echo (getpass), so the key stays out of terminal
+    scrollback, tmux buffers and screen shares. It is sent only to
+    api.steampowered.com and never written to any output file.
+    """
     key = os.environ.get("STEAM_API_KEY", "").strip()
-    if not key:
-        try:
-            key = input("Steam Web API key: ").strip()
-        except (EOFError, KeyboardInterrupt):
-            sys.exit("\nAborted.")
+    if key:
+        return key
+
+    try:
+        key = getpass.getpass("Steam Web API key (not shown as you type): ").strip()
+    except (EOFError, KeyboardInterrupt):
+        sys.exit("\nAborted.")
     if not key:
         sys.exit("No API key provided. Get one at https://steamcommunity.com/dev/apikey")
     return key
@@ -186,13 +196,35 @@ def bucket(rows):
 
 # ---------------------------------------------------------------- output
 
+def md_cell(value):
+    """Escape a value for a Markdown table cell.
+
+    An unescaped pipe in a game name adds a column, so the hours and
+    last-played values slide out of the row and no renderer complains.
+    Steam has titles with pipes in them.
+    """
+    return str(value).replace("|", "\\|")
+
+
+def csv_safe(name):
+    """Neutralise a leading formula character in a game name.
+
+    Excel and Sheets execute a cell that starts with =, +, - or @, and
+    opening the CSV in a spreadsheet is the main thing anyone does with it.
+    A leading apostrophe is the standard defence (spreadsheets hide it; a
+    text editor will show it).
+    """
+    return "'" + name if name[:1] in ("=", "+", "-", "@") else name
+
+
 def write_csv(rows, path):
     fields = ["appid", "name", "hours_total", "hours_2weeks", "last_played",
               "hours_windows", "hours_mac", "hours_linux", "hours_deck", "store_url"]
     with open(path, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
         w.writeheader()
-        w.writerows(rows)
+        for r in rows:
+            w.writerow({**r, "name": csv_safe(r["name"])})
 
 
 def write_report(data, rows, steamid, path):
@@ -207,7 +239,7 @@ def write_report(data, rows, steamid, path):
 
     L = []
     A = L.append
-    A(f"# Steam library — {player.get('personaname') or steamid}")
+    A(f"# Steam library — {md_cell(player.get('personaname') or steamid)}")
     A("")
     A(f"Generated {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     A("")
@@ -233,7 +265,9 @@ def write_report(data, rows, steamid, path):
     A(f"- Total playtime: {total_h:,.1f} hours ({total_h / 24:,.1f} days)")
     if played:
         A(f"- Mean hours per played game: {total_h / len(played):.1f}")
-        mid = sorted(r["hours_total"] for r in played)[len(played) // 2]
+        # statistics.median averages the two middle values on an even count.
+        # Indexing [n // 2] returns the upper one, which is not the median.
+        mid = statistics.median(r["hours_total"] for r in played)
         A(f"- Median hours per played game: {mid:.1f}")
     A("")
     A("## Playtime distribution")
@@ -250,7 +284,7 @@ def write_report(data, rows, steamid, path):
         A("| Game | Hours (2wk) | Hours (total) |")
         A("|---|---:|---:|")
         for g in recent:
-            A(f"| {g.get('name')} | {hours(g.get('playtime_2weeks'))} "
+            A(f"| {md_cell(g.get('name'))} | {hours(g.get('playtime_2weeks'))} "
               f"| {hours(g.get('playtime_forever'))} |")
         A("")
 
@@ -259,7 +293,7 @@ def write_report(data, rows, steamid, path):
     A("| # | Game | Hours | Last played |")
     A("|---:|---|---:|---|")
     for i, r in enumerate(rows[:50], 1):
-        A(f"| {i} | {r['name']} | {r['hours_total']} | {r['last_played'] or '—'} |")
+        A(f"| {i} | {md_cell(r['name'])} | {r['hours_total']} | {r['last_played'] or '—'} |")
     A("")
 
     A("## Full library, most-played first")
@@ -267,7 +301,7 @@ def write_report(data, rows, steamid, path):
     A("| # | AppID | Game | Hours | Last played |")
     A("|---:|---:|---|---:|---|")
     for i, r in enumerate(rows, 1):
-        A(f"| {i} | {r['appid']} | {r['name']} | {r['hours_total']} "
+        A(f"| {i} | {r['appid']} | {md_cell(r['name'])} | {r['hours_total']} "
           f"| {r['last_played'] or '—'} |")
     A("")
 
@@ -289,7 +323,9 @@ def parse_args():
     )
     p.add_argument(
         "--out", default=".", metavar="DIR",
-        help="where to write the three output files (default: current directory)",
+        help="Directory for the three output files, created if missing. "
+             "Existing files of the same name are overwritten. "
+             "Defaults to the current directory.",
     )
     args = p.parse_args()
     if not args.who:
@@ -300,8 +336,15 @@ def parse_args():
 
 def main():
     args = parse_args()
-    out_dir = os.path.abspath(args.out)
-    os.makedirs(out_dir, exist_ok=True)
+
+    # Neither PowerShell nor cmd expands ~ in an argument to a native command,
+    # so `--out ~/exports` arrives as the literal string and would otherwise
+    # create a folder actually named "~" in the working directory.
+    out_dir = os.path.abspath(os.path.expanduser(args.out))
+    try:
+        os.makedirs(out_dir, exist_ok=True)
+    except OSError as e:
+        sys.exit(f"Cannot use {out_dir} as the output directory: {e.strerror}")
 
     key = get_key()
     steamid = resolve_steamid(key, args.who)

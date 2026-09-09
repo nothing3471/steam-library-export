@@ -1,9 +1,24 @@
-# This tool's own output. It contains your SteamID64, profile URL, country and
-# complete library with playtimes. If you clone this repo and run the script
-# here, these rules are what stand between that and an accidental `git add -A`.
+# This tool's output. It carries your SteamID64, profile URL, country and complete
+# library with playtimes. If you clone this repo and run the script inside it, these
+# rules are what stand between that and an accidental `git add -A`.
 steam_library.csv
 steam_library_report.md
 steam_library_raw.json
+
+# The same data under any other name. People rename exports, date them, and keep
+# copies, and the rules above only match three exact filenames.
+steam_library*.csv
+steam_library*.md
+steam_library*.json
+
+# Anywhere the API key might get parked. The script reads $STEAM_API_KEY, and the
+# obvious way to make that persist is a file right here.
+.env
+.env.*
+*.key
+steam_key*
+*_secret*
+*token*
 
 # Python
 __pycache__/

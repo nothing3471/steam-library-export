@@ -19,16 +19,36 @@ Three files land in whatever directory you ran it from:
 | `steam_library_report.md` | account summary, playtime buckets, top 50, then everything, most-played first |
 | `steam_library_raw.json` | the raw API responses, so changing your mind about the output costs nothing |
 
+## Getting it
+
+One file. Clone the repo, or just download `steam_library.py` on its own and run it
+wherever you like — it imports nothing outside the standard library and needs no
+other file in the repo.
+
+```bash
+git clone https://github.com/nothing3471/steam-library-export
+cd steam-library-export
+```
+
 ## What it needs
 
-Python 3.7 or newer. No dependencies — standard library only.
+Python 3.7 or newer. No dependencies.
 
-A Steam Web API key, which is free and takes about a minute:
+A Steam Web API key, free, about a minute to get:
 [steamcommunity.com/dev/apikey](https://steamcommunity.com/dev/apikey). Any domain
 works (put `localhost` if the form insists on one).
 
+```powershell
+$env:STEAM_API_KEY = "xxxxxxxxxxxx"    # PowerShell
+set STEAM_API_KEY=xxxxxxxxxxxx         # cmd
+export STEAM_API_KEY=xxxxxxxxxxxx      # bash
+```
+
+Leave it unset and the script asks for it. The prompt does not echo, so the key
+stays out of your scrollback. It is sent to `api.steampowered.com` and nowhere else,
+and it is never written into any of the three output files.
+
 ```bash
-export STEAM_API_KEY=xxxxxxxxxxxx     # or leave it unset and the script prompts
 python steam_library.py your_vanity_name
 ```
 
@@ -60,9 +80,12 @@ never, not unknown.
 
 ## When it gives up
 
-429 and 5xx get three attempts, five seconds apart and then ten. 401 and 403 stop
-immediately: the key is wrong, and the API is not going to change its mind about
-that.
+Three attempts total: the first, then retries five and ten seconds later. Only 429,
+500, 502 and 503 are retried — every other status, 504 included, stops on the first
+response.
+
+401 and 403 stop immediately. The key is wrong, and the API is not going to change
+its mind about that.
 
 ## Licence
 
