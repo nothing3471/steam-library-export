@@ -159,7 +159,9 @@ def build_rows(owned):
         total = g.get("playtime_forever", 0)
         rows.append({
             "appid": g.get("appid"),
-            "name": g.get("name", f"Unknown app {g.get('appid')}"),
+            # `or` not a get() default: Steam returns "name": null for some
+            # delisted and unvetted apps, and a default only covers a missing key.
+            "name": g.get("name") or f"Unknown app {g.get('appid')}",
             "hours_total": hours(total),
             "minutes_total": total,
             "hours_2weeks": hours(g.get("playtime_2weeks", 0)),
@@ -175,20 +177,27 @@ def build_rows(owned):
 
 
 def bucket(rows):
+    """Count games per playtime band, working in minutes.
+
+    Steam reports minutes and hours() rounds to one decimal, so a game with one
+    or two real minutes becomes 0.0 hours. Bucketing on that rounded value filed
+    it under "Never played", which is the one row in this table people actually
+    quote. These edges use the raw minutes instead.
+    """
     edges = [
-        ("Never played (0h)", lambda h: h == 0),
-        ("Under 1h", lambda h: 0 < h < 1),
-        ("1-5h", lambda h: 1 <= h < 5),
-        ("5-10h", lambda h: 5 <= h < 10),
-        ("10-25h", lambda h: 10 <= h < 25),
-        ("25-50h", lambda h: 25 <= h < 50),
-        ("50-100h", lambda h: 50 <= h < 100),
-        ("100h+", lambda h: h >= 100),
+        ("Never played (0h)", lambda m: m == 0),
+        ("Under 1h", lambda m: 0 < m < 60),
+        ("1-5h", lambda m: 60 <= m < 300),
+        ("5-10h", lambda m: 300 <= m < 600),
+        ("10-25h", lambda m: 600 <= m < 1500),
+        ("25-50h", lambda m: 1500 <= m < 3000),
+        ("50-100h", lambda m: 3000 <= m < 6000),
+        ("100h+", lambda m: m >= 6000),
     ]
     counts = Counter()
     for r in rows:
         for label, test in edges:
-            if test(r["hours_total"]):
+            if test(r["minutes_total"]):
                 counts[label] += 1
                 break
     return [(label, counts.get(label, 0)) for label, _ in edges]
@@ -233,8 +242,9 @@ def write_report(data, rows, steamid, path):
     badge_resp = data["badges"].get("response", {})
     recent = data["recent"].get("response", {}).get("games", [])
 
-    played = [r for r in rows if r["hours_total"] > 0]
-    never = [r for r in rows if r["hours_total"] == 0]
+    # Same reason as bucket(): a game with one minute played is not "never".
+    played = [r for r in rows if r["minutes_total"] > 0]
+    never = [r for r in rows if r["minutes_total"] == 0]
     total_h = round(sum(r["minutes_total"] for r in rows) / 60.0, 1)
 
     L = []
