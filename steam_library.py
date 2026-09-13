@@ -53,6 +53,15 @@ def get_key():
     if key:
         return key
 
+    # No terminal means nobody is there to type. Prompting anyway waits forever
+    # on a pipe or a scheduled job, which looks like the script has hung rather
+    # than like it wants something.
+    if not sys.stdin.isatty():
+        sys.exit(
+            "No API key. Set STEAM_API_KEY, or run this from a terminal so it "
+            "can prompt. Get a key at https://steamcommunity.com/dev/apikey"
+        )
+
     try:
         key = getpass.getpass("Steam Web API key (not shown as you type): ").strip()
     except (EOFError, KeyboardInterrupt):
